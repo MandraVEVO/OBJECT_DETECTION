@@ -277,7 +277,7 @@ Learning      →  Object Detection (FOMO)
 En el menu de la izquiera de nuevo en la seccion de Image se vera asi y deberas poner estos valores y guadarlos
 
 ![object-detection](media/object_detecion_parameters.png)
-Por ultimo en la seccion siguiente seleccionar Object detection para posteriormente ingresar estos valores de la imagen para despues entrenar y guardar el modelo
+Por ultimo en la seccion siguiente seleccionar Object detection para posteriormente ingresar estos valores de la imagen para despues entrenar y guardar el modelo, **OJO**, en la seccion de Profile int8 model tienes que dejarla sin confirmar
 
 | Parámetro | Valor |
 | --- | --- |
@@ -287,47 +287,47 @@ Por ultimo en la seccion siguiente seleccionar Object detection para posteriorme
 | Resolución | 96×96 px |
 | Color depth | Grayscale |
 
-![deploy](media/deploy_arduino.png)
-Para obtener el modelo en este caso pusimos la opcion de arduino y luego darle build para obtenerlo
+![deploy](media/configure_deploy.png)
+Para obtener el modelo en este caso pusimos la opcion de arduino y en inference engine como TensorFlow lite luego darle build para obtener el entrenamiento como libreria de arduino.
 
 ### Hiperparámetros de entrenamiento FOMO
 
-![Matriz de confusion FOMO](media/matriz_confusion_fomo.png)
+![Matriz de confusion FOMO](media/true_confusionM_fomo.png)
 
 ## PASO 8: Resultados FOMO y comparación de modelos
 
 ### Métricas FOMO (validation set)
 
-**F1 Score global: 76.1%**
+**F1 Score global (non-background): 75.5%** · Precisión: 72.5% · Recall: 78.7%
 
-| Clase | F1 Score |
-| --- | --- |
-| bolsa_ok | 0.81 |
-| cables_ok | 0.83 |
-| caja_ok | 0.85 |
-| mesa_riesgo | 0.57 |
-| mochila_ok | 0.87 |
-| mochila_riesgo | 0.85 |
-| silla_riesgo | 0.62 |
+| Clase | Precisión | Recall | F1 Score | Soporte |
+| --- | --- | --- | --- | --- |
+| bolsa_ok | 0.649 | 0.960 | 0.774 | 25 |
+| cables_ok | 0.771 | 0.860 | 0.813 | 43 |
+| caja_ok | 0.846 | 0.786 | 0.815 | 14 |
+| mesa_riesgo | 0.410 | 0.864 | 0.556 | 66 |
+| mochila_ok | 0.907 | 0.868 | 0.887 | 235 |
+| mochila_riesgo | 0.808 | 0.903 | 0.853 | 93 |
+| silla_riesgo | 0.678 | 0.548 | 0.606 | 177 |
 
 ### Tabla comparativa final
 
 | Clase | YOLOv8 AP50 | FOMO F1 |
 | --- | --- | --- |
-| mochila_riesgo | 0.995 | 0.850 |
-| mochila_ok | 0.995 | 0.870 |
-| bolsa_ok | 0.995 | 0.810 |
-| caja_ok | 0.995 | 0.850 |
-| mesa_riesgo | 0.985 | 0.570 |
-| cables_ok | 0.945 | 0.830 |
-| silla_riesgo | 0.894 | 0.620 |
-| **Promedio** | **0.972** | **0.771** |
+| mochila_riesgo | 0.995 | 0.853 |
+| mochila_ok | 0.995 | 0.887 |
+| bolsa_ok | 0.995 | 0.774 |
+| caja_ok | 0.995 | 0.815 |
+| mesa_riesgo | 0.985 | 0.556 |
+| cables_ok | 0.945 | 0.813 |
+| silla_riesgo | 0.894 | 0.606 |
+| **Promedio** | **0.972** | **0.755** |
 
-La diferencia de 20.1 puntos porcentuales en precisión
+La diferencia de 21.7 puntos porcentuales en precisión
 entre YOLOv8n y FOMO representa la compensación necesaria
 para reducir el costo de hardware en un 98%
 
-## PASO 9: Deteccion en tiempo real con ESP32 y script en computadora
+## PASO 9: Deteccion en tiempo real con YOLOv8n
 
 Para este paso se realizo un script usando python en las cuales se usaron las siguientes librerias:
 
@@ -344,4 +344,64 @@ Para visualizar el programa de deteccion con el modelo yolo se visualiza con el 
  python detector.py --ip 210.139.240.31 --port 8080 --stream video
 ```
 
+## PASO 10: Deteccion en tiempo real con la ESP32
+
+Para la configuracion de este se realiza primero el reseteo de la  esp32 para evitar que tenga choques con firmware que haya existido, en este caso al usar el mechdog de hiwonder cuenta con su propio firmware, para eso guardamos una copia de seguridad de este y despues procedemos a hacer el borrado de la ESP32-SE con modulo de camara
+
+para este caso usamos estos comandos en linux:
+
+#### Instalacion para hacer el backup
+
+``` bash
+sudo pacman -S python-pip
+
+pip install esptool
+```
+
+#### Identificar el puerto de tu esp32
+
+``` bash
+ls /dev/tty*
+```
+
+#### Leer todo el firmware para hacer el backup
+
+``` bash
+esptool.py --chip esp32s3 --port /dev/ttyUSB0 read_flash 0x0 0x800000 backup_hiwonder.bin
+```
+
+*TENER EN CUENTA* que si tu placa tiene mas de 8mb puedes cambiar el valor a '0x1000000' o tambien para verificar que se hizo revisar el tamaño del archivo backup con el siguiente comando 'esptool.py flash_id'
+
+## Firmware para volver al que se tenia
+
+``` bash
+esptool.py --chip esp32s3 --port /dev/ttyUSB0 write_flash 0x0 backup_hiwonder.bin
+```
+
+## Borrar firmware para flashear en arduino IDE
+
+``` bash
+esptool.py --chip esp32s3 --port /dev/ttyUSB0 erase_flash
+```
+
+## Configuracion de Arduino IDE
+
+Para esta parte haremos la configuracion de esta interfaz para trabajar con la ESP32-S
+
+### paso 1: Importacion de libreria
+
+![deploy](media/import_library_arduino.png)
+Despues de esto agregas la libreria en .zip que se descargo de Edge Impulse
+
+### paso 2: Configuracion de herramientas en la IDE
+
+![deploy](media/tools.png)
+Despues hacer esta configuracion para la placa ESP32S para que pueda hacer la compilacion
+
+### paso 3: Implementacion de codigo y compilacion
+
+Despues de tener la configuracion se implemento el codigo que esta en la carpeta de 'scritps' como .ino y tambien el receptor_fomo.py esto debido a que el archivo .ino muestra los resultados en terminal, por lo que se implemento en python un script que hace uso de la red para poder capturar los datos en teminal desde el mechDog
+
 ## Conclusiones
+
+En conclusion, la implementacion de estos modelos para ver en tiempo real es algo muy interesante ya que podemos hacer su comparacion de precision, por un lado el uso de un equipo especifico es obviamente de mejor calidad pero en cuanto a la parte economica muchos lugares como instituciones publicas no aceptan este tipo de gastos en cambio la implementacion con FOMO hace que reduzca demasiado los costos pero a cambio de precision pero al no ser tan baja precision resulta bastante optimo, e incluso puede hacer que se tenga mas precision si se hace el dataset especificamente para el modelo, por ende es mas rentable la implementacion de este modelo con una baja infraestructura para la deteccion de objetos.
