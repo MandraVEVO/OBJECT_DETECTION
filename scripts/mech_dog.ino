@@ -1,7 +1,17 @@
 #include <mech-dog-FOMO_inferencing.h>
 #include "esp_camera.h"
+#include <WiFi.h>
+#include <WiFiUdp.h>
 
-// ─── PINES ESP32-S3 ───────────────────────────────────────────
+// ─── CONFIGURACIÓN WiFi ───────────────────────────────────────────
+const char* WIFI_SSID = "Mandra";
+const char* WIFI_PASS = "12345678";
+const char* LAPTOP_IP = "10.182.136.52"; //aqui se pone la ip de tu computadora
+const int   LAPTOP_PORT = 5005;
+
+WiFiUDP udp;
+
+// ─── PINES ESP32-S3 ───────────────────────────────────────────────
 #define PWDN_GPIO_NUM  -1
 #define RESET_GPIO_NUM -1
 #define XCLK_GPIO_NUM  15
@@ -19,29 +29,30 @@
 #define HREF_GPIO_NUM  7
 #define PCLK_GPIO_NUM  13
 
-#define LED_PIN        2
-#define CONFIANZA_MIN  0.6
+#define LED_PIN       2
+#define CONFIANZA_MIN 0.6
 
 const bool ES_RIESGO[] = {
-    false,  // 0: bolsa_ok
-    false,  // 1: cables_ok
-    false,  // 2: caja_ok
-    true,   // 3: mesa_riesgo
-    false,  // 4: mochila_ok
-    true,   // 5: mochila_riesgo
-    true    // 6: silla_riesgo
+    false, false, false,
+    true,  false, true, true
 };
 
-// Buffer estático — no usa heap dinámico
 #define FRAME_BYTES (EI_CLASSIFIER_INPUT_WIDTH * EI_CLASSIFIER_INPUT_HEIGHT)
 static uint8_t frame_buf[FRAME_BYTES];
 
-// Callback correcto para FOMO con imagen grayscale
+void enviar(const char* msg) {
+    Serial.println(msg);
+    if (WiFi.status() == WL_CONNECTED) {
+        udp.beginPacket(LAPTOP_IP, LAPTOP_PORT);
+        udp.print(msg);
+        udp.endPacket();
+    }
+}
+
 static int get_signal_data(size_t offset, size_t length, float *out_ptr) {
     for (size_t i = 0; i < length; i++) {
-        uint8_t px  = frame_buf[offset + i];
-        // FOMO necesita RGB empaquetado aunque sea gris
-        out_ptr[i]  = (float)((px << 16) | (px << 8) | px);
+        uint8_t px = frame_buf[offset + i];
+        out_ptr[i] = (float)((px << 16) | (px << 8) | px);
     }
     return 0;
 }
@@ -49,14 +60,28 @@ static int get_signal_data(size_t offset, size_t length, float *out_ptr) {
 void setup() {
     Serial.begin(115200);
     delay(1000);
-
-    Serial.println("\n========================================");
-    Serial.println("  MechDog — Detector FOMO");
-    Serial.println("========================================\n");
-
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
 
+    // ── Conectar WiFi ─────────────────────────────────────────────
+    Serial.printf("Conectando a %s...\n", WIFI_SSID);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    int intentos = 0;
+    while (WiFi.status() != WL_CONNECTED && intentos < 20) {
+        delay(500);
+        Serial.print(".");
+        intentos++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("\n✅ WiFi OK — IP del ESP32: %s\n",
+            WiFi.localIP().toString().c_str());
+        udp.begin(4210);
+    } else {
+        Serial.println("\n⚠ Sin WiFi — solo Serial USB");
+    }
+
+    // ── Inicializar cámara ────────────────────────────────────────
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer   = LEDC_TIMER_0;
@@ -85,68 +110,61 @@ void setup() {
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        Serial.printf("❌ Error camara: 0x%x\n", err);
+        char msg[50];
+        snprintf(msg, sizeof(msg), "Error camara: 0x%x", err);
+        enviar(msg);
         while (true);
     }
 
-    Serial.printf("✅ Camara OK — %dx%d\n",
-        EI_CLASSIFIER_INPUT_WIDTH,
-        EI_CLASSIFIER_INPUT_HEIGHT);
-    Serial.printf("Buffer: %d bytes\n", FRAME_BYTES);
-    Serial.println("\nClases:");
-    for (int i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
-        Serial.printf("  [%d] %s %s\n", i,
-            ei_classifier_inferencing_categories[i],
-            ES_RIESGO[i] ? "<- RIESGO" : "");
-    }
-    Serial.println("\n> Iniciando...\n");
+    enviar("Camara OK");
+    enviar("Iniciando deteccion...");
 }
 
 void loop() {
 
-    // 1. Capturar
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
-        Serial.println("❌ Fallo captura");
+        enviar("Fallo captura");
         delay(500);
         return;
     }
 
     if (fb->len != FRAME_BYTES) {
-        Serial.printf("❌ Tamaño incorrecto: %d\n", fb->len);
+        char msg[50];
+        snprintf(msg, sizeof(msg), "Tamano incorrecto: %d", (int)fb->len);
+        enviar(msg);
         esp_camera_fb_return(fb);
         delay(500);
         return;
     }
 
     memcpy(frame_buf, fb->buf, FRAME_BYTES);
-    esp_camera_fb_return(fb);   // liberar ANTES de inferencia
+    esp_camera_fb_return(fb);
 
-    // 2. Señal
     signal_t signal;
     signal.total_length = FRAME_BYTES;
     signal.get_data     = &get_signal_data;
 
-    // 3. Inferencia
     ei_impulse_result_t result = {0};
     EI_IMPULSE_ERROR ei_err = run_classifier(&signal, &result, false);
 
     if (ei_err != EI_IMPULSE_OK) {
-        Serial.printf("❌ Error clasificador: %d\n", ei_err);
+        char msg[50];
+        snprintf(msg, sizeof(msg), "Error clasificador: %d", (int)ei_err);
+        enviar(msg);
         delay(500);
         return;
     }
 
-    // 4. Resultados
-    Serial.println("─────────────────────────────");
-
     bool hay_riesgo    = false;
     int  n_detecciones = 0;
 
+    enviar("─────────────────────────────");
+
     for (uint32_t i = 0; i < result.bounding_boxes_count; i++) {
         ei_impulse_result_bounding_box_t bb = result.bounding_boxes[i];
-
         if (bb.value < CONFIANZA_MIN) continue;
+
         n_detecciones++;
 
         bool es_riesgo = false;
@@ -159,18 +177,19 @@ void loop() {
         }
         if (es_riesgo) hay_riesgo = true;
 
-        Serial.printf("%s %s  conf:%.2f  pos:(%d,%d)\n",
+        char msg[80];
+        snprintf(msg, sizeof(msg), "%s %s  conf:%.2f  pos:(%d,%d)",
             es_riesgo ? "ALERTA" : "OK",
             bb.label, bb.value, bb.x, bb.y);
+        enviar(msg);
     }
 
     if (n_detecciones == 0) {
-        Serial.println("  Sin detecciones");
+        enviar("Sin detecciones");
     }
 
-    // 5. Alerta
     if (hay_riesgo) {
-        Serial.println("\n!!! RIESGO DETECTADO !!!\n");
+        enviar("!!! RIESGO DETECTADO !!!");
         for (int i = 0; i < 5; i++) {
             digitalWrite(LED_PIN, HIGH); delay(100);
             digitalWrite(LED_PIN, LOW);  delay(100);
@@ -180,8 +199,10 @@ void loop() {
         digitalWrite(LED_PIN, LOW);
     }
 
-    Serial.printf("Tiempo: %llu ms\n",
+    char tiempo[50];
+    snprintf(tiempo, sizeof(tiempo), "Tiempo: %llu ms",
         result.timing.dsp + result.timing.classification);
+    enviar(tiempo);
 
     delay(500);
 }
