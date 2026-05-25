@@ -74,7 +74,7 @@ Antes de iniciar cada video se bloqueó la exposición manteniendo  presionado e
 
 El salón de clases tiene la siguiente distribución:
 
-#### agregar imagen de distribucion del salon
+![PASILLO](media/DISTRIBUCION_PASILLOS.jpeg)
 
 Se grabaron **2 pasillos verticales** (P1 y P2) de
 aproximadamente 5 metros cada uno.
@@ -292,7 +292,7 @@ Para obtener el modelo en este caso pusimos la opcion de arduino y en inference 
 
 ### Hiperparámetros de entrenamiento FOMO
 
-![Matriz de confusion FOMO](media/true_confusionM_fomo.png)
+![Matriz de confusion FOMO](media/FOMO_MATRIZ_CONFUSION.jpeg)
 
 ## PASO 8: Resultados FOMO y comparación de modelos
 
@@ -396,11 +396,13 @@ Despues de esto agregas la libreria en .zip que se descargo de Edge Impulse
 ### paso 2: Configuracion de herramientas en la IDE
 
 ![deploy](media/tools.png)
-Despues hacer esta configuracion para la placa ESP32S para que pueda hacer la compilacion
+Despues hacer esta configuracion para la placa ESP32S para que pueda hacer la compilacion (**esta placa es la del modulo de vision del mechdog de hiwonder**)
 
 ### paso 3: Implementacion de codigo y compilacion
 
 Despues de tener la configuracion se implemento el codigo que esta en la carpeta de 'scritps' como .ino y tambien el receptor_fomo.py esto debido a que el archivo .ino muestra los resultados en terminal, por lo que se implemento en python un script que hace uso de la red para poder capturar los datos en teminal desde el mechDog
+
+![video_muestra](media/FOMO_VIEW.gif)
 
 ## Conclusiones
 
